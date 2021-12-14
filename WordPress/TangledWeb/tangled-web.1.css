@@ -1,0 +1,429 @@
+table {
+   border-collapse: collapse;
+}
+
+table tr {
+   border: 0;
+}
+
+div.bottom {
+   border-top: 1px solid black;
+   font-size: 65%;
+}
+
+.bold {
+   font-weight: bold;
+}
+
+#name-cloud {
+   text-align: center;
+}
+
+#name-cloud h3 {
+   text-align: left;
+}
+h3 {
+    margin-top: 0px;
+    font-weight: bold !important;
+}
+
+#home-image-caption {
+   font-size: 70%;
+}
+
+.adop {
+   font-weight: bold;
+   font-style: italic;
+
+}
+
+div#gimage {
+   display: none;
+   position: fixed;
+   top: 110px;
+   left: 40px;
+   border: 3px solid black;
+   width: 800px;
+   z-index: 99;
+   background: linear-gradient(#aca, #797);
+}
+
+#gimage-bar {
+   width: 100%;
+   margin: 0px; padding: 0px;
+   background-color: #ddd;
+   display: table;
+   border-bottom: 2px solid black;
+}
+
+#gimage-title {
+   display: table-cell;
+   vertical-align: middle;
+   float: right;
+   text-align: left;
+   font-weight: bold;
+   margin: 0px 0px 0px 10px;
+   padding: 0px;
+}
+
+#gimage-close {
+   float: left;
+}
+
+#gimage-close:hover {
+   cursor:pointer;
+}
+
+#gimage-dl {
+   float: left;
+}
+
+#gimage-dl:hover {
+   cursor:pointer;
+}
+
+#gimage-dl a img {
+   border: 0;
+   outline: none;
+   box-shadow: none;
+}
+
+div#gimage-content {
+   width: 100%;
+   height: 100%;
+   text-align: center;
+   border: none;
+   padding: 0;
+   margin: 0;
+   display: block;
+}
+
+div#gimage-content img {
+   margin-left: auto;
+   margin-right: auto;
+   max-width: 100%;
+   max-height: 550px;
+   display: block;
+}
+
+#gimage-desc {
+   margin: 0px;
+   padding: 0px;
+   text-align: center;
+   background-color: #ddd;
+}
+
+.hidden { display: none; }
+
+#tw-buttons {
+   margin-bottom: 20px;
+   display: none;
+}
+
+#home-button {
+   vertical-align:bottom;
+}
+
+#home-button:hover {
+   cursor: pointer;
+}
+
+#search-button {
+   vertical-align:bottom;
+}
+
+#search-button:hover {
+   cursor: pointer;
+}
+
+#search-menu {
+   padding: 10px;
+   border: 2px solid black;
+   border-radius: 20px;
+   background: #afc;
+   background: linear-gradient(#afc, #7f9);
+   display: none;
+   position: absolute;
+}
+
+.sz0 { font-size:100% }
+.sz1 { font-size:120% }
+.sz2 { font-size:140% }
+.sz3 { font-size:160% }
+.sz4 { font-size:180% }
+.sz5 { font-size:200% }
+.sz6 { font-size:220% }
+.sz7 { font-size:240% }
+.sz8 { font-size:260% }
+.al1 { vertical-align: top }
+.al2 { vertical-align: 25% }
+.al3 { vertical-align: middle }
+.al4 { vertical-align: 75% }
+.al5 { vertical-align: bottom }
+.ff1 { font-family: "Times New Roman", Times, serif; }
+.ff2 { font-family: Arial, Helvetica, san-serif; }
+.ff3 { font-family: "Times New Roman", Times, serif; font-style: italic; }
+.ff4 { font-family: Arial, Helvetica, sans-serif; font-style: italic; }
+.ff5 { font-family: "Comic Sans", cursive; }
+
+.cld-name {
+}
+
+.cld-name:hover {
+   cursor:pointer;
+}
+
+#email {
+   display: none;
+}
+
+#search-status {
+   display: none;
+   background-color: red;
+}
+
+#search-table {
+   background: #acf;
+   border: 2px solid black;
+}
+
+#search-table tr td {
+   padding: 2px 5px 2px 5px;
+}
+
+.th1 {
+   border: none;
+}
+
+.th1 th {
+   text-align: center;
+   text-decoration: underline;
+   padding: 2px 5px 0px 5px;
+}
+
+.th2 {
+   border-bottom: 2px solid black;
+}
+
+.th2 th {
+   padding: 2px 5px 2px 5px !important;
+   text-align: left;
+}
+
+.br {border-right: 1px solid black; }
+
+.search-td:hover {
+   cursor: pointer;
+}
+
+tr.search-row:nth-child(odd) {
+   background: #afc;
+}
+
+tr.search-row:nth-child(even) {
+   background: #8fa;
+}
+
+tr.search-nav {
+   border-top: 2px solid black;
+   background: #acf;
+}
+
+.search-nav td {
+   vertical-align: middle;
+   padding: 2px 5px 2px 5px;
+   margin: 0px;
+   line-height: normal;
+}
+
+.srch-nav {
+   table-layout: fixed;
+   width: auto;
+   margin: 0px;
+   padding: 0px;
+   overflow: hidden;
+   white-space: nowrap;
+}
+
+.srch-go {
+   cursor: pointer;
+   background-color: white;
+   text-align: center;
+   border: 1px solid black;
+   width: 50px;
+}
+
+.srch-sel {
+   background-color: #2aa3d0;
+   text-align: center;
+   border: 1px solid black;
+   width: 50px;
+}
+
+.tw-button {
+   margin-right: 10px;
+   border: 1px solid black;
+   border-radius: 10px;
+}
+
+.ind-tab-active {
+   border-top: 2px solid black;
+   border-left: 2px solid black;
+   border-right: 2px solid black;
+   border-top-left-radius: 5px;
+   border-top-right-radius: 5px;
+   background-color: #fff;
+   padding-left: 5px;
+}
+
+.ind-tab-inactive {
+   border-top: 2px solid black;
+   border-left: 2px solid black;
+   border-right: 2px solid black;
+   border-top-left-radius: 5px;
+   border-top-right-radius: 5px;
+   background-color: #ccc;
+   padding-left: 5px;
+   cursor: pointer;
+}
+
+#summary-section {
+   min-height: 300px;
+}
+
+.children-list {
+   margin-left: 40px;
+}
+
+.citations .note {
+   margin-left: 20px;
+}
+
+.note-toggle-button {
+   cursor: pointer;
+}
+
+.note-first {
+}
+
+.note-full {
+   display: none;
+}
+
+.indi-content {
+   min-height: 300px;
+}
+
+.indi-content-hidden {
+   display: none;
+}
+
+.title-name {
+   font-size:200%;
+   font-weight:bold;
+}
+
+div#ancestors {
+   width: 100%;
+   min-height: 100px;
+   position: relative;
+}
+
+#anc-table {
+   width: 100%;
+   border-spacing: 5px;
+   border-color: white;
+   background-color: white;
+}
+
+#anc-table tr td {
+   text-align: left;
+   vertical-align: top;
+   padding: 0px;
+   margin: 5px;
+   width: 50%;
+}
+
+#anc-table tr th {
+   text-align: center;
+   border-bottom: 1px solid black;
+   font-weight: bold;
+   padding: 0px;
+   margin: 5px;
+   width: 50%;
+}
+
+.ancs td {
+   min-width: 140px;
+}
+
+.person-with-img img {
+   float:left;
+   margin: 5px;
+}
+
+
+div#grand-parents {
+   position: absolute; top: 0px; left: 0px;
+}
+
+.spouse-table{
+   border:none;
+   cell-spacing: 0px;
+}
+
+.spouse-table tr td {
+   text-align: center;
+}
+
+.spouse-table tr td div {
+   margin:5px !important;
+}
+
+.person-icon {
+   margin: 0px;
+   border:2px solid black;
+   border-radius: 15px;
+   padding: 5px;
+   display: inline-block;
+   text-align: center;
+   min-width: 140px;
+}
+
+.sources {
+   list-style-type: decimal;
+}
+
+.citations {
+   list-style-type: lower-alpha;
+}
+
+.media-list {
+   list-style-type: square;
+}
+
+.border-top {
+   border-top: 2px solid black;
+}
+
+table.ped-table {
+   border: 2px solid black;
+}
+
+table.ped-table td {
+   border: none !important;
+   padding: 5px;
+   vertical-align: top;
+}
+
+table.ped-table tr:nth-child(odd) {
+   background: #afc;
+}
+
+table.ped-table tr:nth-child(even) {
+   background: #8fa;
+}
+
+table.ped-table ul {
+   margin: 0 !important;
+}
