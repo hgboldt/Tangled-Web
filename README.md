@@ -27,7 +27,7 @@ Usage
 Gramps
 ------
 
-Click on "Reports", then on "Web Pages", then on "Export to Tangled Web...". When satisfied with the options, click on "OK". As set of files are then created in the destination folder.
+Click on "Reports", then on "Web Pages", then on "Export to Tangled Web...". When satisfied with the options, click on "OK". A set of files are then created in the destination folder.
 
 Once the destination folder is created, you then copy that data to the server. Typically, you will compress that directory into a zip or tar.gz file, which you then extract on the server.
 
