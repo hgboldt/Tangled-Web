@@ -619,12 +619,8 @@ class TWPerson():
                     event_data['wife'] = wife
 
             else:
-                # pdb.set_trace()
-                try:
-                    child_handle = self._filter_participants \
+                child_handle = self._filter_participants \
                           (participants, EventRoleType.PRIMARY)[0][1]
-                except:
-                    pdb.set_trace()
                 child = self.db.get_person_from_handle(child_handle)
                 link = self._get_person_link(child)
                 if link:
