@@ -24,8 +24,7 @@
 #------------------#
 import os
 import itertools
-import operator
-from functools import partial, reduce
+from functools import partial
 from configparser import ConfigParser
 from datetime import datetime
 from shutil import copyfile
@@ -75,11 +74,13 @@ _ = _trans.gettext
 #-------------------------#
 from TWHelper import TWPerson
 from TWPedigree import Pedigree
+from TWWordPress import WordPress
+from TWFileSystem import FileSystem
 
 Pedigree.set_max_generations(False)
 
-MSG_REPORT_OPTIONS = _('Report Options')
-MSG_DESTINATION = _('Destination')
+MSG_REPORT_OPTIONS = _('Filter')
+MSG_DESTINATION = _('Destination directory')
 MSG_DESTINATION_HELP = _('The destination directory for the web files')
 MSG_WEBSITE_TITLE = _('Web site title')
 MSG_DEFAULT_TITLE = _('My Family Tree')
@@ -91,7 +92,7 @@ MSG_FILTER_PERSON_HELP = _('The center person for the filter')
 MSG_BASE_PERSON = _('Base Person')
 MSG_BASE_PERSON_HELP = _('Base person for default web page')
 
-MSG_UPDATE_OPTIONS = _('Update Options')
+MSG_UPDATE_OPTIONS = _('Destination')
 MSG_LIMIT_CONTENT = _('What content to export')
 MSG_LIMIT_ALL_CONTENT = _('All selected content')
 MSG_LIMIT_LAST_UPDATE = _('Content changed since last report')
@@ -146,45 +147,22 @@ MSG_INDIVIDUALS_PROCESSED = _('Total individuals processed:')
 MSG_IMAGES_PROCESSED = _('Total images processed:')
 MSG_CLOSE = _('Close')
 
+MAX_CLOUD_NAMES = 40
 
 CONFIG_FILENAME = 'TangledWeb.ini'
 INIFILE = os.path.join(VERSION_DIR, CONFIG_FILENAME)
-
-MAX_CLOUD_NAMES = 40
-NUM_SUBDIRS = 20
-
 WP_config = ConfigParser()
 if not WP_config.read(INIFILE):
     WP_config['WP'] = {'last_update': '' }
 
-INDEX_FILENAME = 'search-index.json'
 REDIR_INDEX_FILENAME = 'redir-index'
-GLOBALS_FILENAME = 'globs.json'
+GLOBALS_FILENAME = 'globs'
 DATA_DIR_LIMIT = 150
-
-
-redirect_html = """<!DOCTYPE html>
-<html>
-<head>
-<meta http-equiv="refresh" content="5; url=%(newurl)s" />
-</head>
-<body>
-<div style="margin:auto">
-<h1>Redirecting in...</h1>
-<img style="border:none" src="/wp-content/plugins/TangledWeb/img/countdown.gif">
-</div>
-</body>
-</html>
-"""
-
-
-def checksum(st):
-    return reduce(operator.add, map(ord, st)) % 65536
 
 
 #------------------------#
 #                        #
-# WordPressExport class  #
+# TangledWeb class       #
 #                        #
 #------------------------#
 
@@ -224,28 +202,99 @@ class TangledWeb(Report):
         self.title = self.get_option('title')
         self.target = self.get_option('target')
 
-        if not self.make_target_dirs():
-            return
-
         self.all_people = None
         self.surnames = dict()
         self.home_image_path = ''
         self.home_image_desc = ''
+        self.indi_count = 0
+        self.imgs_count = 0
 
-        indi_count = self.process_individuals(opts)
-        imgs_count = self.process_images(opts)
+        # Get the data writer
+        try:
+            export_target = self.get_option('update_target')
+
+            if export_target == 'dir':
+                # Export to local file system
+                if not self.target:
+                    self.user.notify_error(MSG_ERROR_NO_TARGET)
+                    return
+                self.data_writer = FileSystem(self.target)
+
+            elif export_target == 'wp':
+                # Export directly to WordPress
+                tgt_url = self.get_option('target_url')
+                tgt_id = self.get_option('target_id')
+                if not tgt_url or not tgt_id:
+                    self.user.notify_error(MSG_ERROR_NO_TARGET)
+                    return
+                self.data_writer = WordPress(tgt_url, tgt_id)
+
+        except IOError as exc:
+            msg = exc.strerror + ': ' + exc.filename
+            self.user.notify_error(msg)
+            return
+
+        except Exception as exc:
+            self.user.notify_error(exc.strerror)
+            return
+
+        # Do processing
+        msg = self.data_writer.start()
+        if msg:
+            self.user.notify_error(msg)
+            return
+
+        self.determine_individuals_to_process()
+        progress = ProgressWindow()
+        self.do_processing(opts, progress)
         self.process_summary()
 
-        if get_option('redirect_narrated').get_value():
-            narrdir = get_option('redirect_narr_dir').get_value()
-            self._generate_redirects(narrdir)
+        # Handle redirects (if requested)
+        if export_target == 'dir':
+            if get_option('redirect_narrated').get_value():
+                narrdir = get_option('redirect_narr_dir').get_value()
+                self._generate_redirects(narrdir)
+
+        self.data_writer.finish()
 
         # Update .ini file
         WP_config['WP']['last_update'] = str(datetime.now())
         with open(INIFILE, 'w') as ini_file:
             WP_config.write(ini_file)
 
-        CompletionWindow(indi_count, imgs_count)
+        text = MSG_EXPORT_COMPLETE + "\n" \
+               + MSG_INDIVIDUALS_PROCESSED + ' ' + str(self.indi_count) + "\n" \
+               + MSG_IMAGES_PROCESSED + ' ' + str(self.imgs_count)
+        progress.set_step_name('Done!')
+        progress.update(1.0, text)
+
+
+    def do_processing(self, opts, progress):
+        """
+        Do the work
+        """
+        c = 0
+        progress.set_step_name('Processing individuals')
+        for (item, fract) in self.process_individuals(opts):
+            c += 1
+            if c == 10:
+                c = 0
+                progress.update(fract/2)
+            while Gtk.events_pending():
+                Gtk.main_iteration()
+            if progress.cancel_requested():
+                return
+
+        progress.set_step_name('Processing images')
+        for (item, fract) in self.process_images(opts):
+            c += 1
+            if c == 10:
+                c = 0
+                progress.update(0.5 + fract/2)
+            while Gtk.events_pending():
+                Gtk.main_iteration()
+            if progress.cancel_requested():
+                return
 
 
     def get_option(self, opt):
@@ -255,70 +304,58 @@ class TangledWeb(Report):
         return self.menu.get_option_by_name(opt).get_value()
 
 
-    def make_target_dirs(self):
+    def determine_individuals_to_process(self):
         """
-        Check if target directory already exists. If so, exit with message.
+        Figure out list of individuals to process
         """
-        dirname = self.target
-        if not dirname:
-            self.user.notify_error(MSG_ERROR_NO_TARGET)
-            return
+        filters_option = self.menu.get_option_by_name('filter')
+        filter = filters_option.get_filter()
+        ind_list = self.db.iter_person_handles()
+        ind_list = filter.apply(self.db, ind_list, user=self.user)
+        self.all_people = list(ind_list)
+        TWPerson.set_person_filter(self.all_people)
 
-        try:
-            os.mkdir(dirname)
+        # Figure out which people have icons
+        self.people_with_icons = dict()
+        for person_handle in self.all_people:
+            person = self.db.get_person_from_handle(person_handle)
+            pid = person.gramps_id
+            media_list = person.get_media_list()
+            if media_list:
+                self.people_with_icons[pid] = True
 
-            # Create lower level directories
-            self.indis_path = os.path.join(dirname, 'ind')
-            os.mkdir(self.indis_path)
-            self.indsums_path = os.path.join(dirname, 'fam')
-            os.mkdir(self.indsums_path)
-            self.images_path = os.path.join(dirname, 'img')
-            os.mkdir(self.images_path)
-            self.thumbs_path = os.path.join(dirname, 'thm')
-            os.mkdir(self.thumbs_path)
-
-        except IOError as exc:
-            msg = (MSG_ERROR_CREATING_DIR % {'dirname': dirname}) \
-                  + "\n" + exc.strerror
-            self.user.notify_error(msg)
-            return False
-
-        except Exception as exc:
-            msg = MSG_ERROR_CREATING_DIR % dirname
-            self.user.notify_error(msg)
-            return False
-
-        return True
+        TWPerson.set_people_with_icons(self.people_with_icons)
 
 
     def process_individuals(self, options):
         """
         Process all selected individuals.
         """
-
-        filters_option = self.menu.get_option_by_name('filter')
-        filter = filters_option.get_filter()
+        total_indis = len(self.all_people)
+        count = 0
         src_base = media_path(self.db)
-        people_with_icons = dict()
 
-        ind_list = self.db.iter_person_handles()
-        ind_list = filter.apply(self.db, ind_list, user=self.user)
-        self.all_people = list(ind_list)
-        TWPerson.set_person_filter(self.all_people)
-
-        # Create directories for individuals
-        person_dirs = dict()
         for person_handle in self.all_people:
-            person = self.db.get_person_from_handle(person_handle)
-            pid = person.gramps_id
-            dirnums = self._get_dir_for_object(pid)
-            if dirnums not in person_dirs:
-                person_dirs[dirnums] = True
-                self._create_subdirs(self.indis_path, *dirnums)
-                self._create_subdirs(self.indsums_path, *dirnums)
+            person = TWPerson(self.db, person_handle, options, self.menu)
+            pid = person.person.gramps_id
 
-            # Create person icons for all people
-            media_list = person.get_media_list()
+            # Get summary and info data
+            index_summary = person.get_index_summary()
+            info = person.get_info()
+
+            # Write out info files
+            self.data_writer.export_individual(index_summary, info)
+
+            # Remember surnames
+            for rec in index_summary:
+                surname = rec['surname']
+                if surname not in self.surnames:
+                    self.surnames[surname] = 1
+                else:
+                    self.surnames[surname] += 1
+
+            # Create person icons
+            media_list = person.person.get_media_list()
             if media_list:
                 media = self.db.get_media_from_handle(media_list[0].ref)
                 med_path = media.get_path()
@@ -326,84 +363,22 @@ class TangledWeb(Report):
                     srcfile = med_path
                 else:
                     srcfile = os.path.join(src_base, med_path)
-
-                people_with_icons[pid] = dirnums
                 rect = media_list[0].get_rectangle()
 
-                pixbuf = get_thumbnail_image(srcfile,
-                                             rectangle=rect,
+                # Normal icon
+                pixbuf = get_thumbnail_image(srcfile, rectangle=rect,
                                              size=SIZE_NORMAL)
-                destfile = os.path.join(self.indsums_path, *dirnums,
-                                        pid + '.jpg')
-                pixbuf.savev(destfile, 'jpeg', ['quality'], ['85'])
+                self.data_writer.export_image('fam', pid, '.jpg', pixbuf)
 
-                pixbuf = get_thumbnail_image(srcfile,
-                                             rectangle=rect,
+                # Large icon
+                pixbuf = get_thumbnail_image(srcfile, rectangle=rect,
                                              size=SIZE_LARGE)
-                destfile = os.path.join(self.indsums_path, *dirnums,
-                                        pid + '.big.jpg')
-                pixbuf.savev(destfile, 'jpeg', ['quality'], ['85'])
+                self.data_writer.export_image('fam', pid, '.big.jpg', pixbuf)
 
-        TWPerson.set_people_with_icons(people_with_icons)
+            count += 1;
+            yield (pid, count/total_indis)
 
-        with open(os.path.join(self.target, INDEX_FILENAME), 'w') as outfile:
-            for person_handle in self.all_people:
-                person = TWPerson(self.db, person_handle, options, self.menu)
-                pid = person.person.gramps_id
-                dirnums = self._get_dir_for_object(pid)
-
-                # Get summary and info data
-                summary = person.get_summary()
-                info = person.get_info()
-                info_info = json.dumps(info['info'])
-                info_summ = json.dumps(info['summary'])
-                cs = "%x,%x" % (checksum(info_info), checksum(info_summ))
-
-                # Write out summary records
-                for rec in summary:
-                    rec['cs'] = cs
-                    outfile.write(json.dumps(rec) + "\n")
-                    surname = rec['surname']
-                    if surname not in self.surnames:
-                        self.surnames[surname] = 1
-                    else:
-                        self.surnames[surname] += 1
-
-                # Write out info files
-                have_icon = (pid in people_with_icons)
-                info['summary']['ico'] = int(have_icon)
-                fname = os.path.join(self.indis_path, *dirnums, pid + '.json')
-                with open(fname, 'w') as ofile:
-                    ofile.write(info_info)
-
-                fname = os.path.join(self.indsums_path, *dirnums, pid + '.json')
-                with open(fname, 'w') as ofile:
-                    ofile.write(info_summ)
-
-        return len(self.all_people)
-
-
-    def _get_dir_for_object(self, gramps_id):
-        """
-        Get (possibly create) directories for person
-        """
-        pnum = int(''.join((c for c in gramps_id if c.isnumeric())))
-        dir1 = chr(ord('a') + (pnum % NUM_SUBDIRS))
-        dir2 = chr(ord('a') + ((pnum//NUM_SUBDIRS) % NUM_SUBDIRS))
-        return (dir1, dir2)
-
-
-    def _create_subdirs(self, basedir, dir1, dir2):
-        """
-        Ensure subdirectories are created
-        """
-        dpath1 = os.path.join(basedir, dir1)
-        if not os.path.isdir(dpath1):
-            os.mkdir(dpath1)
-
-        dpath2 = os.path.join(dpath1, dir2)
-        if not os.path.isdir(dpath2):
-            os.mkdir(dpath2)
+        self.indi_count = count
 
 
     def process_summary(self):
@@ -431,10 +406,7 @@ class TangledWeb(Report):
                           'home_image_desc': self.home_image_desc,
                           'base_person': base_pid,
                           'cloud': surnames}
-
-        global_filename = os.path.join(self.target, GLOBALS_FILENAME)
-        with open(global_filename, 'w') as gfile:
-            gfile.write(json.dumps(global_summary))
+        self.data_writer.export_json(None, GLOBALS_FILENAME, global_summary)
 
 
     def process_images(self, options):
@@ -472,8 +444,12 @@ class TangledWeb(Report):
         # Create full directory hierarchy
         images_count = 0
         media_dirs = dict()
-        for (media_id, med_detail) in TWPerson.get_images():
+        image_list = TWPerson.get_images()
+        total_images = len(image_list)
+        count = 0
+        for (media_id, med_detail) in image_list:
             media = self.db.get_media_from_gramps_id(media_id)
+            mid = media.gramps_id
             simage = media.get_path()
             if simage[0] == os.sep:
                 srcfile = simage
@@ -483,28 +459,22 @@ class TangledWeb(Report):
 
             if last_mod > last_update:
                 images_count += 1
-                dirt = self._get_dir_for_object(media.gramps_id)
-                if dirt not in media_dirs:
-                    media_dirs[dirt] = True
-                    self._create_subdirs(self.images_path, *dirt)
-                    self._create_subdirs(self.thumbs_path, *dirt)
 
-                timage = media.gramps_id + med_detail['ext']
-                destfile = os.path.join(self.images_path, *dirt, timage)
-                copyfile(srcfile, destfile)
+                timage = mid + med_detail['ext']
+                self.data_writer.export_file('img', timage, srcfile)
 
                 # Create thumbnail
-                thm_name = media.gramps_id + '.jpg'
                 pixbuf = get_thumbnail_image(srcfile, size=SIZE_LARGE)
-                destfile = os.path.join(self.thumbs_path, *dirt, thm_name)
-                pixbuf.savev(destfile, 'jpeg', ['quality'], ['85'])
+                self.data_writer.export_image('thm', mid, '.jpg', pixbuf)
 
                 # Is this the home image?
-                if media.gramps_id == home_image_id:
-                    fname = media.gramps_id + home_media['ext']
-                    self.home_image_path = os.path.join(*dirt, fname)
+                if mid == home_image_id:
+                    self.home_image_path = mid + home_media['ext']
 
-        return images_count
+            count += 1
+            yield (media_id, count/total_images)
+
+        self.imgs_count = images_count
 
 
     def _generate_redirects(self, narrated_dir):
@@ -514,6 +484,7 @@ class TangledWeb(Report):
             for person_handle in self.all_people:
                 person = self.db.get_person_from_handle(person_handle)
                 outfile.write("%s,%s\n" %(person_handle, person.gramps_id))
+
 
 
 
@@ -536,7 +507,7 @@ class TangledWebOptions(MenuReportOptions):
         """Add the options to the report option menu."""
 
         self._add_report_options(menu)
-        # self._add_update_options(menu)
+        self._add_update_options(menu)
         self._add_page_generation_options(menu)
         self._add_include_options(menu)
         self._add_redirect_options(menu)
@@ -548,18 +519,6 @@ class TangledWebOptions(MenuReportOptions):
         """
         category_name = MSG_REPORT_OPTIONS
         addopt = partial(menu.add_option, category_name)
-
-        dbname = self._db.get_dbname()
-        default_dir = dbname + ' WPWEB'
-        dest_path = os.path.join(config.get('paths.website-directory'),
-                                 default_dir)
-        self._target = DestinationOption(MSG_DESTINATION, dest_path)
-        self._target.set_help(MSG_DESTINATION_HELP)
-        addopt('target', self._target)
-
-        self._title = StringOption(MSG_WEBSITE_TITLE, MSG_DEFAULT_TITLE)
-        self._title.set_help(MSG_WEBSITE_TITLE_HELP)
-        addopt('title', self._title)
 
         self._filter = FilterOption(MSG_FILTER, 0)
         self._filter.set_help(MSG_FILTER_HELP)
@@ -593,38 +552,46 @@ class TangledWebOptions(MenuReportOptions):
         self.have_last_upd = bool(self.last_upd)
         init_limit = 'last' if self.have_last_upd else 'all'
 
-        self._limit_content = EnumeratedListOption(MSG_LIMIT_CONTENT, init_limit)
-        self._limit_content.add_item('all', MSG_LIMIT_ALL_CONTENT)
-        self._limit_content.add_item('last', MSG_LIMIT_LAST_UPDATE)
-        self._limit_content.set_help(MSG_LIMIT_CONTENT_HELP)
-        self._limit_content.connect('value-changed', self._update_update_options)
-        addopt('all_content', self._limit_content)
-        self._limit_content.set_available(self.have_last_upd)
+        self._update_target = EnumeratedListOption(MSG_TARGET, 'dir')
+        self._update_target.add_item('dir', MSG_TARGET_DIRECTORY)
+        self._update_target.add_item('wp', MSG_TARGET_WORDPRESS)
+        self._update_target.connect('value-changed', self._update_update_options)
+        addopt('update_target', self._update_target)
+        self._update_target.set_help(MSG_TARGET_HELP)
 
-        self._content_since = StringOption(MSG_CONTENT_SINCE, self.last_upd)
-        self._content_since.set_help(MSG_CONTENT_SINCE_HELP)
-        addopt('content_since_date', self._content_since)
-        self._content_since.set_available(self.have_last_upd)
-
-        self._target = EnumeratedListOption(MSG_TARGET, 'dir')
-        self._target.add_item('dir', MSG_TARGET_DIRECTORY)
-        self._target.add_item('wp', MSG_TARGET_WORDPRESS)
-        self._target.connect('value-changed', self._update_target_options)
+        dbname = self._db.get_dbname()
+        default_dir = dbname + ' WPWEB'
+        dest_path = os.path.join(config.get('paths.website-directory'),
+                                 default_dir)
+        self._target = DestinationOption(MSG_DESTINATION, dest_path)
+        self._target.set_help(MSG_DESTINATION_HELP)
         addopt('target', self._target)
-        self._target.set_help(MSG_TARGET_HELP)
+
+        self._target_url = StringOption(_('Website to update'), '')
+        self._target_url.set_help(_('URL of website to update'))
+        addopt('target_url', self._target_url)
 
         self._target_id = StringOption(MSG_TARGET_ID, '')
         self._target_id.set_help(MSG_TARGET_ID_HELP)
         addopt('target_id', self._target_id)
-        self._target_id.set_available(False)
+
+        self._update_update_options()
 
 
     def _update_update_options(self):
         """
         Handle change to all images setting
         """
-        limit_content = (self._limit_content.get_value() == 'last')
-        self._content_since.set_available(limit_content)
+        tgt = self._update_target.get_value()
+        if tgt == 'dir':
+            self._target.set_available(True)
+            self._target_url.set_available(False)
+            self._target_id.set_available(False)
+
+        elif tgt == 'wp':
+            self._target.set_available(False)
+            self._target_url.set_available(True)
+            self._target_id.set_available(True)
 
 
     def _update_target_options(self):
@@ -641,6 +608,10 @@ class TangledWebOptions(MenuReportOptions):
         """
         category_name = _("Page Generation")
         addopt = partial(menu.add_option, category_name)
+
+        self._title = StringOption(MSG_WEBSITE_TITLE, MSG_DEFAULT_TITLE)
+        self._title.set_help(MSG_WEBSITE_TITLE_HELP)
+        addopt('title', self._title)
 
         homenote = NoteOption(_('Home page note'))
         homenote.set_help(_("A note to be used on the home page"))
@@ -747,37 +718,72 @@ class TangledWebOptions(MenuReportOptions):
             self._pid.set_available(True)
 
 
-class CompletionWindow(Gtk.Window):
+#------------------------#
+#                        #
+# ProgressWindow class   #
+#                        #
+#------------------------#
+
+class ProgressWindow(Gtk.Window):
     """
-    Completion window displayed at end of processing
+    Show progress of export process
     """
 
-    def __init__(self, total_inds, total_imgs):
+    def __init__(self):
         """
         """
-        Gtk.Window.__init__(self, title=MSG_RESULT)
-        self.set_default_size(400, 200)
+        Gtk.Window.__init__(self, title='Tangled Web Progress')
+        self.set_border_width(10)
+        self.set_default_size(400, 300)
+        self.canceled = False
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         box.homogenous = False
         box.set_border_width(0)
 
-        text = MSG_EXPORT_COMPLETE + "\n" \
-               + MSG_INDIVIDUALS_PROCESSED + ' ' + str(total_inds) + "\n" \
-               + MSG_IMAGES_PROCESSED + ' ' + str(total_imgs)
+        self.stepname = Gtk.Label()
+        box.pack_start(self.stepname, expand=False, fill=False, padding=5)
 
-        # Results label
-        results_label = Gtk.Label(label=text)
-        box.pack_start(results_label, expand=True, fill=False, padding=5)
+        self.progressbar = Gtk.ProgressBar()
+        box.pack_start(self.progressbar, expand=False, fill=False, padding=5)
 
-        # Button bar
+        scw = Gtk.ScrolledWindow()
+        self.textview = Gtk.TextView()
+        scw.add(self.textview)
+        box.pack_start(scw, expand=True, fill=True, padding=5)
+
         button_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+
+        self.cancel_button = Gtk.Button.new_with_label(_('Cancel'))
+        self.cancel_button.connect('clicked', self.cancel_processing)
+        button_bar.pack_start(self.cancel_button, False, False, 5)
 
         close_button = Gtk.Button.new_with_label(MSG_CLOSE)
         close_button.connect('clicked', lambda x: self.close())
         button_bar.pack_start(close_button, False, False, 5)
-
         box.pack_start(button_bar, expand=False, fill=False, padding=5)
 
         self.add(box)
         self.show_all()
+
+    def cancel_processing(self, x):
+        self.canceled = True
+        self.cancel_button.set_sensitive(False)
+        self.output("Cancel requested\n")
+
+    def cancel_requested(self):
+        return self.canceled
+
+    def set_step_name(self, step_name):
+        self.stepname.set_text(step_name)
+
+    def update(self, amount, item=None):
+        self.progressbar.set_fraction(amount)
+        if item:
+            self.output(item + "\n")
+
+    def output(self, text):
+        buffer = self.textview.get_buffer()
+        iter = buffer.get_end_iter()
+        buffer.insert(iter, text)
+        self.textview.scroll_to_iter(buffer.get_end_iter(), 0.0, False, 0.0, 1.0)

@@ -35,14 +35,54 @@ class TangledWeb
         add_action('wp_ajax_nopriv_tangled_web_search', [$this, 'tangled_web_search']);
         add_action('wp_ajax_tangled_web_home', [$this, 'tangled_web_home']);
         add_action('wp_ajax_nopriv_tangled_web_home', [$this, 'tangled_web_home']);
+
+        add_action('rest_api_init', [$this, 'rest_api_init']);
+
         add_filter('plugin_action_links_' . plugin_basename(__FILE__),
                    [$this, 'settings_page']);
 
-        wp_register_script('tangled-web-js', plugin_dir_url(__FILE__) . 'tangled-web.1.comp.js',
+        wp_register_script('tangled-web-js', plugin_dir_url(__FILE__) . 'tangled-web.1.js',
                            ['jquery']);
         wp_enqueue_style('tangled-web-css', plugin_dir_url(__FILE__) . 'tangled-web.1.css');
         add_shortcode('tangled-web', [$this, 'show_html']);
     }
+
+    function rest_api_init()
+    {
+        register_rest_route
+            ('tangled_web', '/start',
+             ['methods' => 'POST',
+              'callback' => [$this, 'tangled_web_start'],
+              'args' =>
+                    ['id' =>
+                        ['required' => true],
+                     'pw' =>
+                        ['required' => true],
+                    ],
+              'permission_callback' => '__return_true',
+             ]);
+
+        register_rest_route
+            ('tangled_web', '/status',
+             ['methods' => 'POST',
+              'callback' => [$this, 'tangled_web_status'],
+              'args' =>
+                    ['tab' =>
+                        ['required' => true,
+                         'validate_callback' =>
+                            function($param, $request, $key) {
+                                return $this->check_id_field($param);
+                            }
+                        ],
+                    ],
+              'permission_callback' =>
+                    function() {
+                        return current_user_can('editor');
+                    },
+              ]);
+
+    }
+
 
     function settings_page($links)
     {
@@ -277,9 +317,11 @@ ONE_TABLE_FORM;
             $redir_status = 'not loaded';
         }
 
+        $date = new DateTime();
         $sql = $wpdb->prepare("INSERT INTO {$wpdb->prefix}tangled_web_data
-                               VALUES (%s,%s,%s,%s)",
-                               $table, $datadir, 'table added', $redir_status);
+                               VALUES (%s,%s,%s,%s,%s)",
+                               $table, $datadir, 'table added', $redir_status,
+                               $date->getTimestamp());
         $res = $wpdb->query($sql);
         $this->status("Table $table added.");
 
@@ -441,7 +483,7 @@ ONE_TABLE_FORM;
         $query = "INSERT INTO {$wpdb->prefix}tangled_web_index VALUES ";
         $qdata = [];
         foreach ($data as $row) {
-            $qdata[] = $wpdb->prepare("(%d,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            $qdata[] = $wpdb->prepare("(%d,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                                       $row['id'], $tab, $row['pid'],
                                       $row['surname'], $row['given'],
                                       $row['gdr'], $row['prim'],
@@ -452,7 +494,8 @@ ONE_TABLE_FORM;
                                       isset($row['dplace']) ? $row['dplace'] : null,
                                       isset($row['dtype']) ? $row['dtype'] : null,
                                       isset($row['ddate']) ? $row['ddate'] : null,
-                                      isset($row['dyear']) ? $row['dyear'] : null );
+                                      isset($row['dyear']) ? $row['dyear'] : null,
+                                      $row['csi'], $row['csf'] );
         }
         return $wpdb->query($query . implode(',', $qdata));
     }
@@ -597,17 +640,23 @@ ONE_TABLE_FORM;
         foreach ($what_to_show as $show) {
 
             if ($show == 'photo') {
-                $home_image = "/{$datadir}/img/{$globs['home_image']}";
-                $home_image = str_replace(' ', '%20', $home_image);
-                $outstr .= "$sep<div id=\"home-image\"><img src=\"$home_image\" />\n";
-                if ($globs['home_image_desc']) {
-                    $outstr .= "<span id=\"home-image-caption\">{$globs['home_image_desc']}</span>";
+                $hi = $globs['home_image'];
+                if ($hi) {
+                    $dirs = $this->get_dir($hi);
+                    $home_image = "/{$datadir}/img/{$dirs}/{$hi}";
+                    $home_image = str_replace(' ', '%20', $home_image);
+                    $outstr .= "$sep<div id=\"home-image\"><img src=\"$home_image\" />\n";
+                    if ($globs['home_image_desc']) {
+                        $outstr .= "<span id=\"home-image-caption\">{$globs['home_image_desc']}</span>";
+                    }
+                    $outstr .= "</div>\n";
                 }
-                $outstr .= "</div>\n";
             }
             elseif ($show == 'note') {
                 $home_note = $this->massage_note($tab, $globs['home_note']);
-                $outstr .= "$sep<div>$home_note</div>\n";
+                if ($home_note) {
+                    $outstr .= "$sep<div id=\"home-note\">$home_note</div>\n";
+                }
             }
             elseif ($show == 'birthdays') {
                 $outstr .= $sep . $this->generate_born_on_this_date($globs, $tab);
@@ -642,6 +691,9 @@ ONE_TABLE_FORM;
 
         $diff = $max_count - $min_count;
         $range_size = $diff / 8;
+        if ($range_size < 1) {
+            $range_size = 1;
+        }
 
         shuffle($cloud);
         $name_cloud = '';
@@ -1082,6 +1134,68 @@ PAGE_CONTENT;
 
         die();
     }
+
+    //------------------//
+    //                  //
+    //   A P I s        //
+    //                  //
+    //------------------//
+
+    function my_update_cookie($logged_in_cookie)
+    {
+        $_COOKIE[LOGGED_IN_COOKIE] = $logged_in_cookie;
+    }
+
+
+    function tangled_web_start(WP_REST_Request $request)
+    {
+        global $wpdb;
+
+        add_action('set_logged_in_cookie', [$this, 'my_update_cookie']);
+
+        $creds = ['user_login' => $request->get_param('id'),
+                  'user_password' => $request->get_param('pw'),
+                  'remember' => true];
+
+        $user = wp_signon($creds, false);
+        if (is_wp_error($user)) {
+            return $user;
+        }
+
+        wp_set_current_user($user->ID);
+        wp_set_auth_cookie($user->ID);
+        $nonce = wp_create_nonce('wp_rest');
+
+        $sql = "SELECT tabname, last_update FROM {$wpdb->prefix}tangled_web_data";
+        $res = $wpdb->get_results($sql, ARRAY_A);
+        if (count($res) == 0) {
+            return new WP_Error('no_table', 'No entries in table', ['status' => 404]);
+        }
+
+        $retval = ['gonk' => $nonce,
+                   'tables' => $res,
+                   'user' => $user->to_array()];
+        return new WP_REST_Response($retval);
+    }
+
+
+    function tangled_web_status(WP_REST_Request $request)
+    {
+        global $wpdb;
+
+        $tab = $request->get_param('tab');
+
+        $sql = $wpdb->prepare("SELECT pid, csi, csf FROM {$wpdb->prefix}tangled_web_index
+                               WHERE tabname=%s", $tab);
+        $res = $wpdb->get_results($sql, ARRAY_A);
+
+        if (count($res) == 0) {
+            return new WP_Error('no_table', 'No entries in table', ['status' => 404]);
+        }
+
+        return new WP_REST_Response(['checksums' => $res ]);
+    }
+
 }
 
 function activate_plugin_gramps()
@@ -1104,12 +1218,13 @@ function activate_plugin_gramps()
                 tabname VARCHAR(10) PRIMARY KEY,
                 datadir VARCHAR(255) NOT NULL,
                 status VARCHAR(20) NOT NULL,
-                redir_status VARCHAR(20) NOT NULL
+                redir_status VARCHAR(20) NOT NULL,
+                last_update TIMESTAMP NOT NULL
             ) $charset_collate";
     dbDelta($sql);
 
     $sql = "CREATE TABLE {$wpdb->prefix}tangled_web_index (
-                id INTEGER PRIMARY KEY,
+                id INTEGER NOT NULL,
                 tabname VARCHAR(10) NOT NULL,
                 pid VARCHAR(10) NOT NULL,
                 surname VARCHAR(50) NOT NULL,
@@ -1124,6 +1239,8 @@ function activate_plugin_gramps()
                 dtype CHAR(1),
                 ddate CHAR(40),
                 dyear CHAR(4),
+                csi VARCHAR(6),
+                csf VARCHAR(6),
                 CONSTRAINT `fk_index_tabname`
                     FOREIGN KEY (tabname)
                     REFERENCES {$wpdb->prefix}tangled_web_data (tabname)

@@ -71,7 +71,6 @@ ABS_FILE_LIMIT = 150
 RELATIONSHIP_LIMIT = 8
 
 
-
 class TWPerson():
     """
     Generate information about a person
@@ -182,7 +181,7 @@ class TWPerson():
         self.relationships.append([self.person.gramps_id, dadid, momid])
 
 
-    def get_summary(self):
+    def get_index_summary(self):
         """
         Get summary and names information.
         """
@@ -315,13 +314,13 @@ class TWPerson():
 
         (pars, fams) = self._handle_family_info()
 
-        summary = {'pid': self.person.gramps_id,
+        faminfo = {'pid': pid,
                    'famc': pars,
                    'fams': fams}
 
-        return {'pid': self.person.gramps_id,
+        return {'pid': pid,
                 'info': info,
-                'summary': summary}
+                'fam': faminfo}
 
 
     def _handle_family_info(self):
@@ -620,8 +619,12 @@ class TWPerson():
                     event_data['wife'] = wife
 
             else:
-                child_handle = self._filter_participants \
+                # pdb.set_trace()
+                try:
+                    child_handle = self._filter_participants \
                           (participants, EventRoleType.PRIMARY)[0][1]
+                except:
+                    pdb.set_trace()
                 child = self.db.get_person_from_handle(child_handle)
                 link = self._get_person_link(child)
                 if link:
