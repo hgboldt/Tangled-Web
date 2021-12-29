@@ -41,7 +41,7 @@ class TangledWeb
         add_filter('plugin_action_links_' . plugin_basename(__FILE__),
                    [$this, 'settings_page']);
 
-        wp_register_script('tangled-web-js', plugin_dir_url(__FILE__) . 'tangled-web.1.js',
+        wp_register_script('tangled-web-js', plugin_dir_url(__FILE__) . 'tangled-web.1.comp.js',
                            ['jquery']);
         wp_enqueue_style('tangled-web-css', plugin_dir_url(__FILE__) . 'tangled-web.1.css');
         add_shortcode('tangled-web', [$this, 'show_html']);
