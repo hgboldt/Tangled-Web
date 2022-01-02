@@ -606,7 +606,8 @@ class TWPerson():
                 self._handle_others(event_data, participants)
 
         elif role == 'Parent':
-            if event_str.startswith('Marriage'):
+            if event_type in [EventType.MARRIAGE, EventType.MARR_BANNS,
+                              EventType.DIVORCE]:
                 family = None
                 for p in participants:
                     if p[0] == 'Family':
@@ -619,8 +620,12 @@ class TWPerson():
                     event_data['wife'] = wife
 
             else:
-                child_handle = self._filter_participants \
+                try:
+                    child_handle = self._filter_participants \
                           (participants, EventRoleType.PRIMARY)[0][1]
+                except:
+                    pdb.set_trace()
+
                 child = self.db.get_person_from_handle(child_handle)
                 link = self._get_person_link(child)
                 if link:
@@ -903,7 +908,7 @@ class TWPerson():
                 'events': [ {
                       'role': role,
                       'event': event,
-                      'eventref': None } ] }
+                      'eventref': event_ref } ] }
 
 
     def _insert_event(self, event_list, event):
@@ -922,6 +927,8 @@ class TWPerson():
                     ev = event_list[i]['events'][0]['event']
                     if ev == event['events'][0]['event']:
                         # event is already in list
+                        #if event['events'][0]['role'] == 'Parent':
+                        #    pdb.set_trace()
                         return
             i += 1
         event_list.append(event)
